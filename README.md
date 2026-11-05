@@ -1,130 +1,106 @@
-# Build-a-Complete-Medical-Chatbot-with-LLMs-LangChain-Pinecone-Flask-AWS
+# TCI Express AI Chatbot
 
-# How to run?
-### STEPS:
+A Flask chatbot that answers questions about **TCI Express**. It gets its information live from the
+official TCI Express website, the TCI Express shipment-tracking page and the web (Tavily search), and
+uses an LLM (Groq) only to phrase the answer. There is no local database or vector store.
 
-Clone the repository
+## What it can answer
 
-```bash
-git clonehttps://github.com/entbappy/Build-a-Complete-Medical-Chatbot-with-LLMs-LangChain-Pinecone-Flask-AWS.git
+| Question | Where the answer comes from |
+|---|---|
+| A website link in the message | The page is fetched and summarised |
+| Shipment tracking (a DWB / docket number, "track ...") | Live tracking page on tciexpress.in |
+| Board of directors and committees | Official board page (shown as tables, no LLM) |
+| Senior people (Chairman, MD, CFO, directors, anyone on the official Top Management or Board pages) | **Only** the official website pages, current office-holders first |
+| Official-site topics (contact details, about/mission, each express service, value added services, infrastructure, quality policy) | The matching official page |
+| A person's name (e.g. "Mohit") | Table of public LinkedIn profiles found by web search |
+| Revenue, results, news, share price, other questions | Web search (Tavily): the official site first, then the wider web |
+
+The chatbot only discusses TCI Express. Other questions get a fixed refusal.
+
+## How a message is handled (`/get`)
+
+1. Input checks: empty message, 800-character limit, short follow-ups reuse the previous question.
+2. A URL in the message: scrape and summarise it.
+3. A DWB number with a tracking word: live tracking.
+4. Board / committee question: official board page.
+5. Senior-people question: official Top Management and Board pages.
+6. Person name: LinkedIn profile table (skipped when an official page answers the question).
+7. "Revenue of TCI" type questions: web answer.
+8. Everything else: web search, official site first; if nothing is found the fallback message is shown.
+
+The routing is regex based, so no LLM call is made just to decide where a question goes.
+
+## Project layout
+
 ```
-### STEP 01- Create a conda environment after opening the repository
-
-```bash
-conda create -n medibot python=3.10 -y
+app.py                  Flask app, /get route and the routing order above
+web_search.py           Tavily web search, LinkedIn name lookup, search guardrails
+src/
+  site_service.py       Reads official tciexpress.in pages (cached 15 min), senior-people lookup
+  board_service.py      Board and committee tables from the official page (cached 1 h)
+  tracking_service.py   Live shipment tracking page parser
+  router.py             Regex helpers (name and finance question detection)
+  helper.py             URL detection and website scraping
+  prompt.py             Prompt for the website-summary feature
+templates/chat.html     The chat page (single page)
+requirements.txt        Python packages
+context.md              Deployment notes and session history
+guardrail.md            Every guardrail the chatbot applies, and known gaps
+PERF_BASELINE.md        Startup / latency measurements
+Here are just the Nginx steps, done.txt   Server nginx setup
+_archive_unused/        Files that are no longer used (can be deleted or restored)
 ```
 
-```bash
-conda activate medibot
-```
+## Setup
 
+Requires **Python 3.12 or newer**.
 
-### STEP 02- install the requirements
 ```bash
+python -m venv venv
+venv\Scripts\activate            # Windows   (Linux: source venv/bin/activate)
 pip install -r requirements.txt
 ```
 
-
-### Create a `.env` file in the root directory and add your Pinecone & openai credentials as follows:
+Create a `.env` file in the project root (never commit it):
 
 ```ini
-PINECONE_API_KEY = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-OPENAI_API_KEY = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+GROQ_API_KEY=...        # required - the LLM (Groq)
+TAVILY_API_KEY=...      # required - web search
+FLASK_SECRET_KEY=...    # recommended - keeps the "last question" session valid across restarts
+APP_HOST=0.0.0.0        # optional (use 127.0.0.1 behind nginx)
+APP_PORT=8000           # optional
 ```
 
+The app stops at startup with a clear error if `GROQ_API_KEY` or `TAVILY_API_KEY` is missing.
+
+## Run
 
 ```bash
-# run the following command to store embeddings to pinecone
-python store_index.py
-```
-
-```bash
-# Finally run the following command
 python app.py
 ```
 
-Now,
-```bash
-open up http://124.7.209.74:8000   (on the server itself: http://localhost:8000)
-```
+Then open <http://localhost:8000>. Startup takes a few seconds (no data files or models are loaded).
 
+## Deployment
 
-### Techstack Used:
+The server runs the app as a systemd service (`chatbot.service`) behind nginx. See `context.md` and the
+nginx notes file. If nginx sits in front, set `client_max_body_size` and `proxy_read_timeout 180s` so slow
+answers do not return a 504.
 
-- Python
-- LangChain
-- Flask
-- GPT
-- Pinecone
+## Troubleshooting
 
+| Message / symptom | Cause and fix |
+|---|---|
+| "The web search service has reached its usage limit..." | The Tavily plan limit is used up. Wait for the monthly reset, upgrade the plan, or put a new key in `.env` and restart. |
+| "The AI service has reached its usage limit..." | The Groq daily or per-minute token limit was hit. Wait, or use a higher Groq tier. |
+| `Missing required env variables` | `.env` is missing or incomplete (see Setup). |
+| "Sorry, I couldn't find relevant information on the web" | The web search returned no TCI Express results for that question. Rephrase it. |
 
+## Things to know
 
-# AWS-CICD-Deployment-with-Github-Actions
-
-## 1. Login to AWS console.
-
-## 2. Create IAM user for deployment
-
-	#with specific access
-
-	1. EC2 access : It is virtual machine
-
-	2. ECR: Elastic Container registry to save your docker image in aws
-
-
-	#Description: About the deployment
-
-	1. Build docker image of the source code
-
-	2. Push your docker image to ECR
-
-	3. Launch Your EC2 
-
-	4. Pull Your image from ECR in EC2
-
-	5. Lauch your docker image in EC2
-
-	#Policy:
-
-	1. AmazonEC2ContainerRegistryFullAccess
-
-	2. AmazonEC2FullAccess
-
-	
-## 3. Create ECR repo to store/save docker image
-    - Save the URI: 315865595366.dkr.ecr.us-east-1.amazonaws.com/medicalbot
-
-	
-## 4. Create EC2 machine (Ubuntu) 
-
-## 5. Open EC2 and Install docker in EC2 Machine:
-	
-	
-	#optinal
-
-	sudo apt-get update -y
-
-	sudo apt-get upgrade
-	
-	#required
-
-	curl -fsSL https://get.docker.com -o get-docker.sh
-
-	sudo sh get-docker.sh
-
-	sudo usermod -aG docker ubuntu
-
-	newgrp docker
-	
-# 6. Configure EC2 as self-hosted runner:
-    setting>actions>runner>new self hosted runner> choose os> then run command one by one
-
-
-# 7. Setup github secrets:
-
-   - AWS_ACCESS_KEY_ID
-   - AWS_SECRET_ACCESS_KEY
-   - AWS_DEFAULT_REGION
-   - ECR_REPO
-   - PINECONE_API_KEY
-   - OPENAI_API_KEY
+- Web answers depend on Tavily and Groq, which have usage limits; people questions use several searches each.
+- LinkedIn details come only from public search snippets and can be incomplete or outdated; senior people
+  come from the official website instead.
+- There is no login or rate limiting on `/get`. See `guardrail.md` for the known gaps (SSRF on URL scraping,
+  prompt injection, rate limiting).
