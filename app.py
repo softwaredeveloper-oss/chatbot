@@ -10,12 +10,13 @@ from langchain_openai import ChatOpenAI
 from flask import Flask, render_template, request, jsonify
 from html import escape as html_escape
 from src.router import (
-    is_company_finance_query,
+    is_company_finance_query, is_db_query, DB_STRONG, DWB_NUMBER,
     extract_person_name, parse_name_query, LIST_CUES,
 )
 from src.tracking_service import TCITrackingService
 from src.board_service import is_board_query, board_answer
 from src import site_service
+from src.oracle_service import OracleService
 
 from src.helper import is_url, extract_url, scrape_website
 from src.prompt import web_system_prompt
@@ -51,6 +52,12 @@ chatModel = ChatOpenAI(
         "reasoning_effort": "none"
     }
 )
+
+# ------------------- Oracle database (read-only text-to-SQL; settings in db_config.yaml) -------------------
+# Nothing is connected at startup: it connects on the first data question. If db_config.yaml is missing
+# or not filled in, the feature is simply switched off and the rest of the chatbot works as before.
+oracle_service = OracleService(llm=chatModel.bind(temperature=0, max_tokens=500))
+print(f"[INFO] Oracle database questions: {'ENABLED' if oracle_service.available else 'disabled (' + oracle_service.error + ')'}")
 
 # ------------------- Web Analysis Prompt (URL-based) -------------------
 web_prompt = PromptTemplate.from_template(web_system_prompt)
@@ -413,6 +420,27 @@ def chat():
                     "source": "TCI Express Official Website",
                     "links": [{"title": r["title"], "url": r["url"]} for r in senior]
                 }), 200
+
+        # Our own booking / docket / branch / customer / pincode data: Oracle database (read-only).
+        # Not for "search the internet" requests or questions an official website page answers.
+        if oracle_service.available and not force_web and is_db_query(msg) and not site_service.matches(msg):
+            print(f"\n[INFO] >>> Routing to the Oracle database: {msg}")
+            db = oracle_service.ask(msg)
+            if db["type"] in ("table", "text"):
+                body = db["message"] + (f"<br>{db['html']}" if db.get("html") else "")
+                return jsonify({"answer": body, "source": "Logistics Data", "links": []}), 200
+            if db["type"] == "error":
+                return jsonify({"answer": db["message"], "source": "None", "links": []}), 200
+            # No SQL possible. A clear data question (docket / booking / freight ...) gets a direct answer here;
+            # vaguer ones carry on to the other sources.
+            if DB_STRONG.search(msg) or DWB_NUMBER.search(msg):
+                return jsonify({
+                    "answer": "I couldn't answer that from the booking database. I can only look up dockets, bookings, "
+                              "freight, customers, branches and pincodes (read-only), and I can't return restricted "
+                              "details such as passwords or contact information, or change any data.",
+                    "source": "None", "links": []
+                }), 200
+            print("[INFO] The database cannot answer this; continuing with the other sources.")
 
         # "mohit" / "all mohit in tci": list EVERY matching public LinkedIn profile (built from the profile
         # data itself, not summarised by the LLM, so nobody is dropped and nothing is invented)

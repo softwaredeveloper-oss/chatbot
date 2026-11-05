@@ -128,3 +128,22 @@ All 📝 (prompt-level):
 5. **Tighten `is_url`** to require a scheme or `www.` and a valid TLD list.
 6. **Per-IP rate limiting and auth** on `/get` and the knowledge-upload endpoints.
 7. **Domain trust** – prefer/allow-list known publishers for finance questions; LinkedIn snippets can be stale or wrong.
+
+
+---
+
+## 11. Oracle database guardrails (`src/oracle_service.py`, `db_config.yaml`)
+
+| # | Guardrail | Type |
+|---|---|---|
+| 11.1 | Only one `SELECT` / `WITH ... SELECT`; no DML, DDL, PL/SQL, `INTO`, `FOR UPDATE`, comments, quoted identifiers, binds, DB links | code |
+| 11.2 | Tables: only those with `enabled: true` in `db_config.yaml`; other schemas, dictionary views (`ALL_`, `DBA_`, `V$`), `TABLE()` blocked; comma joins blocked | code |
+| 11.3 | `hidden_columns` (passwords, phone numbers, PAN/GSTIN, cheque data ...) can never be referenced, in any table, and are not shown to the LLM | code |
+| 11.4 | `SELECT *` blocked; only whitelisted SQL functions; `DBMS_*`, `UTL_*`, `SYS.*` blocked | code |
+| 11.5 | Every query runs in `SET TRANSACTION READ ONLY` (the database itself rejects writes, tested), rolled back afterwards | database |
+| 11.6 | Row cap (`max_rows`, default 200; 50 shown) and call timeout (`query_timeout_seconds`) | code |
+| 11.7 | Credentials only in the git-ignored `db_config.yaml`; password never in code or logs | config |
+| 11.8 | Database down / bad login / too slow: a clear message, never a stack trace | code |
+| 11.9 | Gap: name-based hidden-column check also blocks harmless columns with the same name in other tables | known |
+| 11.10 | Gap: the configured account may have broad rights (the test account has the DBA role); the app enforces read-only itself, a dedicated read-only user is still recommended | known |
+| 11.11 | Gap: no login or rate limit on `/get`, so anyone who can open the chat can query the allowed tables | known |

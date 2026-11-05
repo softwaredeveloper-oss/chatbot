@@ -123,3 +123,37 @@ def is_external_info_query(query: str) -> bool:
     return bool(EXTERNAL_INFO_PATTERN.search(q) or re.search(
         r"\b(board|members?|leadership|promoters?|employ\w*|staff|dev\w*per\w*|devs?|engin\w*|team|people|"
         r"managers?|heads?|hr|cto|cio|cfo|coo|linkedin|works?|working|personnel)\b", q))
+
+
+# ---------------------------------------------------------------------------
+# Questions about the booking / docket / branch / customer / pincode data (answered from Oracle)
+# ---------------------------------------------------------------------------
+DB_STRONG = re.compile(
+    r"\b(dockets?|dwb|bookings?|booked|consignors?|consignees?|freight|tfrt|chargeable|pincodes?|pin\s+codes?|oda)\b",
+    re.IGNORECASE,
+)
+DB_WEAK = re.compile(
+    r"\b(revenue|weights?|packages?|pkgs?|customers?|branch(?:es)?|states?|cit(?:y|ies)|region|zone|division)\b",
+    re.IGNORECASE,
+)
+DB_AGG = re.compile(
+    r"\b(how many|count|total|sum|average|avg|top|highest|lowest|maximum|minimum|number of|list|show|which|"
+    r"per|by|wise|each|compare|trend|monthly|yearly|month|year)\b",
+    re.IGNORECASE,
+)
+# "how do I book a shipment", "booking process" are website questions, not data questions
+DB_HOWTO = re.compile(
+    r"\b(how (to|do|can|should) (i|we|you)|process|procedure|steps? to|apply|book a|insurance policy)\b",
+    re.IGNORECASE,
+)
+DWB_NUMBER = re.compile(r"\b\d{8,15}\b")
+
+
+def is_db_query(query: str) -> bool:
+    """True when the question is about our own booking data (dockets, freight, branches, customers, pincodes)."""
+    q = query or ""
+    if DB_HOWTO.search(q) or is_company_finance_query(q):
+        return False  # website question / "revenue of tci" (published figures come from the web)
+    if DB_STRONG.search(q) or DWB_NUMBER.search(q):
+        return True
+    return bool(DB_WEAK.search(q) and DB_AGG.search(q))
