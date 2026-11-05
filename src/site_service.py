@@ -12,7 +12,7 @@ import requests
 from bs4 import BeautifulSoup
 
 BASE_URL = "https://www.tciexpress.in/"
-CACHE_SECONDS = 3600
+CACHE_SECONDS = 900  # 15 min: people/leadership details should be current
 _cache = {}  # path -> (timestamp, text)
 
 # (page path, title, regex that selects it). The more specific pages come first.
@@ -102,4 +102,118 @@ def site_results(msg: str, limit: int = 2):
         text = fetch_page(path)
         if text:
             results.append({"title": title, "url": BASE_URL + path, "content": text, "official": True})
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Senior people (chairman, MD, executives, directors): answered ONLY from the official site
+# ---------------------------------------------------------------------------
+TOP_MGMT_PATH = "top-management"
+BOARD_URL = "https://www.tciexpress.in/board-committee-composition.aspx"
+
+# Role words that mean "a senior person / leadership question"
+ROLE_PATTERN = re.compile(
+    r"\b(chairman|chairperson|vice[\s-]*chairman|managing director|md|ceo|cfo|coo|cbo|"
+    r"chief\s+[a-z]+(\s+[a-z]+)?\s+officer|president|directors?|top management|senior management|"
+    r"leadership|leaders?|key managerial|company secretary|promoters?|management team)\b",
+    re.IGNORECASE,
+)
+# Words that are not part of a person's name (question words, titles, role words, company words)
+_NOT_NAME = set("""
+who is are was the a an of for to in on at and or about tell me show give details detail info information
+what which whom whose current present latest new now today please list all any
+mr mrs ms dr shri sri tci express ltd limited company group india
+chairman chairperson vice managing director directors md ceo cfo coo cbo cio cto chief officer president
+top senior management leadership leader leaders key managerial secretary promoter promoters team
+member members board committee head heads
+""".split())
+
+
+def _norm_tokens(text: str):
+    """'Mr. D.P. Agarwal' -> ['dp', 'agarwal'] (dots dropped, titles removed)."""
+    words = re.findall(r"[a-z]+", re.sub(r"\.", "", (text or "").lower()))
+    words = [w for w in words if w not in {"mr", "mrs", "ms", "dr", "shri", "sri"}]
+    merged = []
+    for w in words:  # initials written apart ("D. P.") join up like "D.P." -> "dp"
+        if merged and len(w) == 1 and len(merged[-1]) == 1:
+            merged[-1] += w
+        else:
+            merged.append(w)
+    return merged
+
+
+def _top_management_people(text: str):
+    """Names on the Top Management page: short 'Mr./Mrs. Name' lines (the long bio lines are skipped)."""
+    names = []
+    for line in text.splitlines():
+        if re.match(r"^(Mr|Mrs|Ms|Dr|Shri)\.?\s", line) and len(line) < 50 and " is " not in line:
+            names.append(line.strip())
+    return names
+
+
+def _board_text_and_people():
+    """(text of the Board of Directors table, [names of everyone on any board/committee table])."""
+    try:
+        from src.board_service import _fetch  # shares the board page cache
+        sections = _fetch()
+    except Exception as e:
+        print(f"[WARN] Board page fetch failed: {e}")
+        return "", []
+    text, people = "", []
+    for title, rows in sections:
+        if "board" in title.lower() and not text:
+            text = "Board of Directors (official TCI Express board page):\n" + "\n".join(
+                f"{r[1]} - {r[2]} ({r[3]})" for r in rows[1:] if len(r) >= 4
+            )
+        people += [r[1] for r in rows[1:] if len(r) >= 2]
+    return text, people
+
+
+def is_senior_query(msg: str) -> bool:
+    """Cheap pre-check (no network): the message has a leadership role word."""
+    return bool(ROLE_PATTERN.search(msg or ""))
+
+
+def senior_results(msg: str):
+    """
+    Official-site pages that answer a question about a SENIOR person: someone listed on the official
+    Top Management / Board pages, or a leadership role (chairman, MD, CFO, directors ...).
+    Returns [] when the message is not such a question, or the official site does not cover it - the
+    normal flow (web search) then handles it.
+    """
+    msg = msg or ""
+    words = re.findall(r"[a-z]+", re.sub(r"\.", "", msg.lower()))
+    name_tokens = [w for w in words if len(w) >= 2 and w not in _NOT_NAME]
+    role = bool(ROLE_PATTERN.search(msg))
+    if not role and not name_tokens:
+        return []
+
+    top = fetch_page(TOP_MGMT_PATH)
+    board_text, board_people = _board_text_and_people()
+    top_people = _top_management_people(top)
+
+    if name_tokens:
+        # "DP Agarwal", "Chander", "Vineet Agarwal": every name word must be in the person's official name
+        wanted = set(name_tokens)
+        in_top = any(wanted <= set(_norm_tokens(n)) for n in top_people)
+        in_board = any(wanted <= set(_norm_tokens(n)) for n in board_people)
+        if not (in_top or in_board):
+            return []  # not a senior person on the official site (e.g. an ordinary employee)
+    else:
+        # only a role word: use the pages that actually mention that role
+        role_words = {w.lower() for m in ROLE_PATTERN.finditer(msg) for w in re.findall(r"[a-z]+", m.group(0).lower())}
+        role_words -= {"top", "senior", "management", "leadership", "leaders", "leader", "team", "key", "managerial"}
+        generic = bool(re.search(r"top management|senior management|leadership|leaders?|management team|key managerial", msg, re.I))
+        in_top = bool(top) and (generic or any(w in top.lower() for w in role_words))
+        in_board = bool(board_text) and (generic or any(w in board_text.lower() for w in role_words))
+        if not (in_top or in_board):
+            return []
+
+    results = []
+    if top and in_top:
+        results.append({"title": "Top Management - TCI Express", "url": BASE_URL + TOP_MGMT_PATH,
+                        "content": top, "official": True})
+    if board_text and in_board:
+        results.append({"title": "Board of Directors - TCI Express", "url": BOARD_URL,
+                        "content": board_text, "official": True})
     return results

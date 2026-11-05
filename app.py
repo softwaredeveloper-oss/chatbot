@@ -119,6 +119,31 @@ tavily_chain = tavily_prompt | chatModel
 # Lists of people need more room than the default 600-token limit
 tavily_people_chain = tavily_prompt | chatModel.bind(max_tokens=900)
 
+# Senior people (chairman, MD, executives, directors): answered ONLY from the official website pages
+official_people_prompt = ChatPromptTemplate.from_template(
+    """You are a helpful assistant for TCI Express.
+Answer ONLY from the official TCI Express website pages below. Never use outside knowledge.
+Answer directly, as if you already know it. Never mention "context", "pages", "sources" or "provided information".
+ALWAYS reply in English only, even if the user writes in Hindi or Hinglish.
+
+Today's date is {today}. The pages show the CURRENT office-holders: give the current position first. List people
+most senior first (Chairman, Managing Director, other executives, then directors). If the pages give a person two
+designations (for example one on the Top Management page and another on the Board page), state both exactly as
+written. For ONE named person give: name, current designation(s), and a short background from the page.
+Use only professional information, never personal contact details or family information.
+NEVER guess a person's gender from their name; use the name or "they".
+Do not use headings; keep it to a few short lines or bullets, and end with: "Source: official TCI Express website."
+If the pages do not contain the answer, reply EXACTLY: NOT_ON_SITE
+
+Official pages:
+{context}
+
+Question: {question}
+
+Answer:"""
+)
+official_people_chain = official_people_prompt | chatModel.bind(max_tokens=700)
+
 # ------------------- Config -------------------
 MAX_MSG_LENGTH = 800
 
@@ -179,6 +204,18 @@ def handle_website_query(msg: str) -> str:
         answer = "I analyzed the website but couldn't generate a clear answer. Please try rephrasing your question."
 
     return answer
+def official_people_answer(msg: str, results: list) -> str:
+    """Answer a senior-people question from the official site pages. '' if the pages do not answer it."""
+    context = "\n\n".join(
+        f"PAGE {i}: {r['title']} ({r['url']})\n{r['content'][:3500]}" for i, r in enumerate(results, 1)
+    )[:7000]
+    res = official_people_chain.invoke({
+        "context": context, "question": msg, "today": datetime.now().strftime("%d %B %Y"),
+    })
+    answer = clean_answer(res.content.strip())
+    return "" if (not answer or answer.startswith("NOT_ON_SITE")) else answer
+
+
 INTERNET_CUE = re.compile(r"\b(internet|online|google|web search|(from|on) the web|from web)\b", re.IGNORECASE)
 
 
@@ -362,6 +399,19 @@ def chat():
                     "answer": board_html,
                     "source": "TCI Express Official Website",
                     "links": board_links
+                }), 200
+
+        # Senior people (chairman, MD, executives, directors, anyone on the official Top Management / Board
+        # pages): ALWAYS from the official website, never from LinkedIn or the web
+        senior = site_service.senior_results(msg)
+        if senior:
+            print(f"\n[INFO] >>> Senior people question, answering from official site: {msg}")
+            senior_answer = official_people_answer(msg, senior)
+            if senior_answer:
+                return jsonify({
+                    "answer": senior_answer,
+                    "source": "TCI Express Official Website",
+                    "links": [{"title": r["title"], "url": r["url"]} for r in senior]
                 }), 200
 
         # "mohit" / "all mohit in tci": list EVERY matching public LinkedIn profile (built from the profile
