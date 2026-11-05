@@ -15,7 +15,9 @@ data/
 models/
 best_model-*/
 # has its own git repository (templates/.git)
-templates/
 
 # database credentials and table info (real values; the .example.yaml template IS committed)
 db_config.yaml
+
+context.md
+*.log
