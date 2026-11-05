@@ -307,6 +307,9 @@ RULES
 9. Quarters are calendar quarters (Q1 = Jan-Mar, Q2 = Apr-Jun, Q3 = Jul-Sep, Q4 = Oct-Dec) unless the question says FY / financial
    year (then Indian FY: Q1 = Apr-Jun, Q2 = Jul-Sep, Q3 = Oct-Dec, Q4 = Jan-Mar). Include the year and quarter in the result columns.
    "Revenue" means SUM(TFRT) (total freight).
+10. A company / person NAME in the question (for example "from Maruti") is matched against the consignor / consignee NAME columns
+   (CNOR, CNEE, CNOR_NAME, CNEE_NAME) with UPPER(col) LIKE '%NAME%' - "from X" means consignor, "to X" means consignee.
+   CUSTCODE / CUST_CODE hold numeric codes, NEVER compare them with a name.
 {data_note}
 
 TABLES
