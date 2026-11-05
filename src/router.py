@@ -158,3 +158,15 @@ def is_db_query(query: str) -> bool:
     if DB_STRONG.search(q) or DWB_NUMBER.search(q):
         return True
     return bool(DB_WEAK.search(q) and DB_AGG.search(q))
+
+
+# Greetings / thanks: never sent to the database
+SMALLTALK = re.compile(
+    r"^\s*(hi+|hello+|hey+|good\s+(morning|afternoon|evening|night)|thanks?(\s+you)?|thank\s+you|ok(ay)?|bye|"
+    r"goodbye|welcome|yes|no|sure|cool|great|nice)\W*$",
+    re.IGNORECASE,
+)
+
+
+def is_smalltalk(query: str) -> bool:
+    return bool(SMALLTALK.match(query or ""))

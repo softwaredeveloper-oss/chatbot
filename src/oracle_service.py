@@ -304,6 +304,9 @@ RULES
    result to the master table. Never join a master table to the big table before summing (it multiplies the numbers).
    CM_CUST is not unique per customer: always join it as (SELECT CUST_CODE, MAX(CUST_NAME) AS CUST_NAME FROM CM_CUST GROUP BY CUST_CODE).
 8. Branch states are 2-letter codes (GJ, MH, DL ...): translate state names to the code.
+9. Quarters are calendar quarters (Q1 = Jan-Mar, Q2 = Apr-Jun, Q3 = Jul-Sep, Q4 = Oct-Dec) unless the question says FY / financial
+   year (then Indian FY: Q1 = Apr-Jun, Q2 = Jul-Sep, Q3 = Oct-Dec, Q4 = Jan-Mar). Include the year and quarter in the result columns.
+   "Revenue" means SUM(TFRT) (total freight).
 {data_note}
 
 TABLES
@@ -324,10 +327,20 @@ Question: {question}"""
         return (m.group(1) if m else text).strip()
 
     # ---- public ------------------------------------------------------------------
-    def ask(self, question: str) -> dict:
-        """{'type': 'table'|'no_sql'|'error', ...}. Never raises for database / LLM-format problems."""
+    def _keyword_match(self, question: str) -> bool:
+        """Does the question mention anything that belongs to one of the tables (free check, no LLM, no database)?"""
+        q = question.lower()
+        return any(
+            t.get("keywords") and re.search(r"\b(?:%s)" % t["keywords"], q) for t in self.cfg["tables"]
+        )
+
+    def ask(self, question: str, strict: bool = False) -> dict:
+        """{'type': 'table'|'no_sql'|'error', ...}. Never raises for database / LLM-format problems.
+        strict=True: if the question mentions nothing from the tables, say no_sql without calling the LLM."""
         if not self.available:
             return {"type": "error", "message": "The database is not configured."}
+        if strict and not self._keyword_match(question):
+            return {"type": "no_sql"}
         try:
             tables_text, data_notes = self._fetch_meta()
         except Exception as e:
@@ -372,7 +385,7 @@ Question: {question}"""
 
     # ---- formatting --------------------------------------------------------------
     @staticmethod
-    def _cell(v):
+    def _cell(v, col: str = ""):
         if v is None:
             return "-"
         if isinstance(v, (datetime, date)):
@@ -380,6 +393,9 @@ Question: {question}"""
         if isinstance(v, float):
             return f"{v:,.2f}"
         if isinstance(v, int):
+            parts = set(re.split(r"[^A-Z]+", col.upper()))
+            if parts & {"YEAR", "QUARTER", "MONTH", "DAY", "CODE", "NO", "NUMBER", "PIN", "PINCODE", "ID", "RANK"}:
+                return str(v)  # identifiers and calendar parts: no thousands separator (2024, not 2,024)
             return f"{v:,}"
         return str(v)
 
@@ -391,9 +407,9 @@ Question: {question}"""
         tail = f"<p style='margin:4px 0;'><em>{escape(footer)}</em></p>" if footer else ""
         n = len(rows)
         if n == 1 and len(cols) == 1:  # a single value: say it, no table needed
-            return {"type": "table", "message": f"**{cols[0]}:** {self._cell(rows[0][0])}", "html": tail, "rows": 1}
+            return {"type": "table", "message": f"**{cols[0]}:** {self._cell(rows[0][0], cols[0])}", "html": tail, "rows": 1}
         head = "".join(f"<th>{escape(c)}</th>" for c in cols)
-        body = "".join("<tr>" + "".join(f"<td>{escape(self._cell(v))}</td>" for v in r) + "</tr>" for r in shown)
+        body = "".join("<tr>" + "".join(f"<td>{escape(self._cell(v, cols[i]))}</td>" for i, v in enumerate(r)) + "</tr>" for r in shown)
         table = (
             "<div class='chat-table-wrapper'><table class='dataframe table table-hover table-striped table-sm'>"
             f"<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>"

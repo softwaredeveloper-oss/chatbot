@@ -10,7 +10,7 @@ from langchain_openai import ChatOpenAI
 from flask import Flask, render_template, request, jsonify
 from html import escape as html_escape
 from src.router import (
-    is_company_finance_query, is_db_query, DB_STRONG, DWB_NUMBER,
+    is_company_finance_query, is_db_query, is_smalltalk, DB_STRONG, DWB_NUMBER,
     extract_person_name, parse_name_query, LIST_CUES,
 )
 from src.tracking_service import TCITrackingService
@@ -421,18 +421,27 @@ def chat():
                     "links": [{"title": r["title"], "url": r["url"]} for r in senior]
                 }), 200
 
-        # Our own booking / docket / branch / customer / pincode data: Oracle database (read-only).
-        # Not for "search the internet" requests or questions an official website page answers.
+        # DATABASE FIRST, ALWAYS: every question is checked against the Oracle database (read-only) before any
+        # web search; the web is used only when the database cannot answer. Not tried for: "search the internet"
+        # requests, questions an official website page answers, greetings/thanks, and plain person-name lookups.
         db_tried = False
-        if oracle_service.available and not force_web and is_db_query(msg) and not site_service.matches(msg):
+        if (oracle_service.available and not force_web and not site_service.matches(msg)
+                and not is_smalltalk(msg) and (is_db_query(msg) or not parse_name_query(msg))):
             db_tried = True
-            print(f"\n[INFO] >>> Routing to the Oracle database: {msg}")
-            db = oracle_service.ask(msg)
+            print(f"\n[INFO] >>> Checking the Oracle database first: {msg}")
+            # strict: a question that mentions nothing from our tables skips the LLM (saves tokens)
+            db = oracle_service.ask(msg, strict=not is_db_query(msg))
             if db["type"] in ("table", "text"):
                 body = db["message"] + (f"<br>{db['html']}" if db.get("html") else "")
+                if re.search(r"\b(revenue|turnover|sales|income)\b", msg, re.IGNORECASE):
+                    body += ("<p style='margin:4px 0;'><em>Revenue here means the freight booked in the database "
+                             "(total freight column), not the company's published results.</em></p>")
                 return jsonify({"answer": body, "source": "Logistics Data", "links": []}), 200
             if db["type"] == "error":
-                return jsonify({"answer": db["message"], "source": "None", "links": []}), 200
+                # a data question gets the error; any other question carries on to the web instead
+                if is_db_query(msg):
+                    return jsonify({"answer": db["message"], "source": "None", "links": []}), 200
+                print("[INFO] Database unavailable; continuing with the other sources.")
             # No SQL possible. A clear data question (docket / booking / freight ...) gets a direct answer here;
             # vaguer ones carry on to the other sources.
             if DB_STRONG.search(msg) or DWB_NUMBER.search(msg):
