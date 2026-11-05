@@ -6,6 +6,7 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 from tavily import TavilyClient
+from tavily.errors import ForbiddenError, UsageLimitExceededError
 
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -13,6 +14,10 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # Load environment variables from .env
 load_dotenv()
+
+
+class SearchLimitError(Exception):
+    """The Tavily plan's search limit is used up (every search fails until it resets)."""
 
 from src.router import bare_person_name, extract_person_name
 
@@ -189,6 +194,13 @@ class WebSearchService:
             return cleaned_results
 
         except Exception as e:
+            # Plan limit used up (Tavily sends 429 / 432 / or 403 "exceeds your plan's set usage limit").
+            # That is not "no results": tell the caller, so the user is not told the info does not exist
+            if isinstance(e, UsageLimitExceededError) or (
+                isinstance(e, ForbiddenError) and "usage limit" in str(e).lower()
+            ):
+                print(f"[WEB SEARCH ERROR] Tavily usage limit reached: {e}")
+                raise SearchLimitError(str(e)) from e
 
             print(f"[WEB SEARCH ERROR] {e}")
 

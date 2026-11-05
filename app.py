@@ -18,7 +18,7 @@ from src.board_service import is_board_query, board_answer
 
 from src.helper import is_url, extract_url, scrape_website
 from src.prompt import web_system_prompt
-from web_search import WebSearchService, is_people_query
+from web_search import WebSearchService, SearchLimitError, is_people_query
 
 app = Flask(__name__)
 # Behind nginx at a path prefix (e.g. /chatbot/): trust the X-Forwarded-* headers it sends
@@ -442,6 +442,14 @@ def chat():
 
     except Exception as e:
         print(f"[ERROR] Failed to process query '{msg}': {e}")
+
+        # Web search plan limit used up: say so instead of "no information found"
+        if isinstance(e, SearchLimitError):
+            return jsonify({
+                "answer": "The web search service has reached its usage limit right now, so I can't look this up. Please try again later.",
+                "source": "None",
+                "links": []
+            }), 200
 
         # Groq limits (429 = too many tokens per minute/day, 413 = request too large): say so clearly
         status = getattr(e, "status_code", None)
