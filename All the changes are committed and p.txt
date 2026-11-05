@@ -1,0 +1,10 @@
+All the changes are committed and pushed to GitHub. I opened a pull request for them: https://github.com/softwaredeveloper-oss/PODs/pull/4
+
+- **Branch:** `deploy/nginx`. Your earlier changes went in through pull requests too (#2 and #3), so I followed the same pattern rather than pushing straight to `main`.
+- **Commit:** `bcbcef1`, with 10 files, covering the app changes, the `deploy/` folder and `.gitattributes`.
+- **Author:** `softwaredeveloper-oss <software.developer@tciexpress.in>`, saved for this project only.
+- **Not included:** `model.safetensors`, which still has to be copied to the server separately, and the `venv` folder.
+
+**Next step:** open the link and click **Merge pull request**. After that, `git clone` on the server gets everything. To test on the server before merging, run `git clone -b deploy/nginx https://github.com/softwaredeveloper-oss/PODs.git`.
+
+Your PC is now on the `deploy/nginx` branch. Once you've merged, run `git checkout main` and then `git pull` to switch back.

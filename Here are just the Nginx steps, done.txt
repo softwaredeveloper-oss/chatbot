@@ -1,0 +1,107 @@
+Here are just the Nginx steps, done by hand on the Linux server. Run each block in order.
+
+### 1. Install Nginx
+```bash
+sudo apt update
+sudo apt install -y nginx
+```
+
+### 2. Free port 8000
+Nginx needs port 8000, so nothing else can be using it:
+```bash
+sudo ss -ltnp | grep :8000
+```
+If this prints anything (for example an old uvicorn), stop that process with `sudo kill <PID>` using the PID shown.
+
+### 3. Create the main Nginx config (port 8000, shared by all projects)
+```bash
+sudo mkdir -p /etc/nginx/ai-projects.d
+
+sudo tee /etc/nginx/sites-available/ai-projects > /dev/null <<'EOF'
+server {
+    listen 8000;
+    server_name _;
+
+    client_max_body_size 50M;     # allow image uploads up to 50 MB
+    proxy_connect_timeout 60s;
+    proxy_send_timeout    300s;   # CPU inference can be slow
+    proxy_read_timeout    300s;
+
+    location = / {
+        default_type text/plain;
+        return 200 "AI projects server is running.\n";
+    }
+
+    # one file per project
+    include /etc/nginx/ai-projects.d/*.conf;
+}
+EOF
+
+sudo ln -sf /etc/nginx/sites-available/ai-projects /etc/nginx/sites-enabled/ai-projects
+```
+
+### 4. Add the route for this project (`/pods/` goes to port 8001)
+```bash
+sudo tee /etc/nginx/ai-projects.d/pods.conf > /dev/null <<'EOF'
+location = /pods {
+    return 301 /pods/;
+}
+
+location /pods/ {
+    proxy_pass http://127.0.0.1:8001/;   # trailing "/" strips the /pods prefix
+    proxy_http_version 1.1;
+    proxy_set_header Host               $host;
+    proxy_set_header X-Real-IP          $remote_addr;
+    proxy_set_header X-Forwarded-For    $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto  $scheme;
+    proxy_set_header X-Forwarded-Prefix /pods;
+}
+EOF
+```
+
+### 5. Test the config and start Nginx
+```bash
+sudo nginx -t                  # must say "syntax is ok" and "test is successful"
+sudo systemctl enable nginx
+sudo systemctl restart nginx
+```
+
+### 6. Start the app on the internal port
+Nginx only forwards requests; your app still has to run on port 8001. From the project folder, start it with:
+```bash
+venv/bin/uvicorn main:app --host 127.0.0.1 --port 8001 --root-path /pods --proxy-headers --forwarded-allow-ips 127.0.0.1
+```
+That command stops when you close the terminal. For an app that keeps running after you log out and starts again at boot, use the systemd service in [pods.service](deploy/systemd/pods.service).
+
+### 7. Check it
+```bash
+curl http://127.0.0.1:8000/            # "AI projects server is running."
+curl http://127.0.0.1:8000/pods/health # the app's health response
+```
+Then open **http://124.7.209.74:8000/pods/** in your browser.
+
+### Adding another AI project later
+Create one more file with a new name and a new internal port, then reload Nginx:
+```bash
+sudo tee /etc/nginx/ai-projects.d/project2.conf > /dev/null <<'EOF'
+location = /project2 { return 301 /project2/; }
+location /project2/ {
+    proxy_pass http://127.0.0.1:8002/;
+    proxy_http_version 1.1;
+    proxy_set_header Host               $host;
+    proxy_set_header X-Real-IP          $remote_addr;
+    proxy_set_header X-Forwarded-For    $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto  $scheme;
+    proxy_set_header X-Forwarded-Prefix /project2;
+}
+EOF
+sudo nginx -t && sudo systemctl reload nginx
+```
+That project then runs its uvicorn with `--port 8002 --root-path /project2`.
+
+**Useful Nginx commands:**
+```bash
+sudo systemctl status nginx              # is Nginx running?
+sudo tail -f /var/log/nginx/error.log    # Nginx errors (for example "502 Bad Gateway" = app not running)
+sudo nginx -t && sudo systemctl reload nginx   # apply config changes
+```

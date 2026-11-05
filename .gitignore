@@ -1,0 +1,18 @@
+# secrets
+.env
+api_key.txt
+# environments / caches / generated
+venv*/
+__pycache__/
+*.pyc
+*.egg-info/
+temp_uploads/
+static/charts/
+# large data / model files (too big for git; move, never delete)
+Jul-2026.xls
+cm_pincode.xlsx
+data/
+models/
+best_model-*/
+# has its own git repository (templates/.git)
+templates/
