@@ -13,6 +13,7 @@ oracle:
   password: YOUR_PASSWORD
   # host:port/service_name   (or host:port:SID if your database uses a SID)
   dsn: db-host.example.com:1521/YOUR_SERVICE_NAME
+  connect_timeout_seconds: 60
   # Oracle 11g needs "Thick mode": folder where Oracle Instant Client 19c (64-bit) is unzipped.
   # Windows example: C:\oracle\instantclient_19_21     Linux example: /opt/oracle/instantclient_19_21
   client_lib_dir: C:\oracle\instantclient_19_21
@@ -26,10 +27,11 @@ limits:
 # Oracle 11g notes for the SQL: use ROWNUM (no FETCH FIRST / OFFSET), no IDENTITY columns.
 tables:
   - name: SCHEMA_NAME.TABLE_NAME      # EXAMPLE - replace with a real table or view
+    enabled: true                     # false = known but hidden from the chatbot
     description: What one row of this table means, in plain words (e.g. "one row per booked docket")
     columns:
       - name: COLUMN_ONE
-        type: NUMBER                  # NUMBER / VARCHAR2 / DATE ...
+        type: NUMBER                  # optional: NUMBER / VARCHAR2 / DATE ... (can be read from the DB later)
         description: What this column holds
       - name: COLUMN_TWO
         type: VARCHAR2
