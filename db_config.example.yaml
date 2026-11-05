@@ -1,0 +1,49 @@
+# Oracle 11g database settings + the tables the chatbot may read.
+#
+# HOW TO USE
+#   1. Copy this file to  db_config.yaml  (same folder) and fill in your real values.
+#   2. db_config.yaml is git-ignored, so the password is never committed. Keep this example file
+#      free of real values - it is the template that goes into git.
+#   3. The chatbot only ever sees the tables and columns listed under "tables" below.
+#
+# Nothing reads this file yet; it is the single place where the database part will be configured.
+
+oracle:
+  user: YOUR_READONLY_USER            # use a read-only Oracle user, not an admin account
+  password: YOUR_PASSWORD
+  # host:port/service_name   (or host:port:SID if your database uses a SID)
+  dsn: db-host.example.com:1521/YOUR_SERVICE_NAME
+  # Oracle 11g needs "Thick mode": folder where Oracle Instant Client 19c (64-bit) is unzipped.
+  # Windows example: C:\oracle\instantclient_19_21     Linux example: /opt/oracle/instantclient_19_21
+  client_lib_dir: C:\oracle\instantclient_19_21
+
+limits:
+  max_rows: 200                       # most rows a query may return to the chatbot
+  query_timeout_seconds: 15           # a query running longer than this is stopped
+
+# Tables / views the chatbot is allowed to query. Anything not listed here is off limits.
+# The LLM is shown only these names, columns and descriptions, so good descriptions = better SQL.
+# Oracle 11g notes for the SQL: use ROWNUM (no FETCH FIRST / OFFSET), no IDENTITY columns.
+tables:
+  - name: SCHEMA_NAME.TABLE_NAME      # EXAMPLE - replace with a real table or view
+    description: What one row of this table means, in plain words (e.g. "one row per booked docket")
+    columns:
+      - name: COLUMN_ONE
+        type: NUMBER                  # NUMBER / VARCHAR2 / DATE ...
+        description: What this column holds
+      - name: COLUMN_TWO
+        type: VARCHAR2
+        description: What this column holds
+      - name: COLUMN_DATE
+        type: DATE
+        description: Booking date (say the date format if it matters)
+    # Columns the chatbot must never return (personal data, phone numbers, etc.)
+    hidden_columns: []
+    # Optional: how this table joins to others, e.g. "SCHEMA.BRANCH.BRANCH_CODE = SCHEMA.TABLE_NAME.BKG_BRANCH"
+    joins: []
+
+# Optional: example questions with the SQL you consider correct. They are shown to the LLM as
+# examples, so 5-10 real ones improve accuracy a lot.
+examples:
+  - question: How many records are there in total?
+    sql: SELECT COUNT(*) AS TOTAL FROM SCHEMA_NAME.TABLE_NAME
