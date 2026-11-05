@@ -43,11 +43,21 @@ SERVICES_PAGES = [("express-services", "Express Services - TCI Express"),
 SERVICES_PATTERN = re.compile(r"\b(services?|offerings?|solutions?|what do you (do|offer))\b", re.IGNORECASE)
 
 _COMPILED = [(p, t, re.compile(rx, re.IGNORECASE)) for p, t, rx in PAGES]
+_NEWSY = re.compile(
+    r"\b(news|latest|recent|recently|update|updates|announce\w*|press release|results?|quarter\w*|q[1-4]|fy\s?\d{2,4}|"
+    r"revenue|turnover|profit|earnings?|dividend|share price|stock|shares?|market cap|nse|bse|ipo|financials?|"
+    r"growth|guidance|outlook|this year|last year)\b",
+    re.IGNORECASE,
+)
 _SPLIT_MARKERS = ("Subscribe to our latest updates", "Tags")
 
 
 def matching_pages(msg: str, limit: int = 2):
     """[(path, title)] of the official pages that answer this message (best first)."""
+    # News / financial / period questions ("latest news about TCI Express", "Q1 results") are not answered by
+    # the static pages: leave them to the web search
+    if _NEWSY.search(msg or ""):
+        return []
     found = [(p, t) for p, t, rx in _COMPILED if rx.search(msg or "")]
     if not found and SERVICES_PATTERN.search(msg or ""):
         found = SERVICES_PAGES

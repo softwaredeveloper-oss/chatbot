@@ -514,21 +514,23 @@ def chat():
         # Whole-internet search, but only results that actually mention TCI Express are kept
         web_answer, web_links = web_answer_for(msg)
 
+        # 5b. Last resort: the web had nothing (or only the "I can only help with TCI Express" refusal). The
+        # question may be about our own data in words the router did not recognise ("find total rows from ...",
+        # "average heaviness of consignments"), so give the database a try before giving up.
+        web_refused = (not web_answer) or web_answer.startswith("I can only help with information about TCI Express")
+        if web_refused and oracle_service.available and not db_tried and not force_web:
+            print(f"[INFO] Nothing useful on the web; last try with the Oracle database: {msg}")
+            db = oracle_service.ask(msg)
+            if db["type"] in ("table", "text"):
+                body = db["message"] + (f"<br>{db['html']}" if db.get("html") else "")
+                return jsonify({"answer": body, "source": "Logistics Data", "links": []}), 200
+
         if web_answer:
             return jsonify({
                 "answer": web_answer,
                 "source": "Live Web Search",
                 "links": web_links
             }), 200
-
-        # 5b. Last resort: the web had nothing either. The question may be about our own data in words the
-        # router did not recognise ("find total rows from ..."), so give the database a try before giving up.
-        if oracle_service.available and not db_tried and not force_web:
-            print(f"[INFO] Nothing found on the web; last try with the Oracle database: {msg}")
-            db = oracle_service.ask(msg)
-            if db["type"] in ("table", "text"):
-                body = db["message"] + (f"<br>{db['html']}" if db.get("html") else "")
-                return jsonify({"answer": body, "source": "Logistics Data", "links": []}), 200
 
         # 6. Final Fallback
         return jsonify({
