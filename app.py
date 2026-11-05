@@ -423,7 +423,9 @@ def chat():
 
         # Our own booking / docket / branch / customer / pincode data: Oracle database (read-only).
         # Not for "search the internet" requests or questions an official website page answers.
+        db_tried = False
         if oracle_service.available and not force_web and is_db_query(msg) and not site_service.matches(msg):
+            db_tried = True
             print(f"\n[INFO] >>> Routing to the Oracle database: {msg}")
             db = oracle_service.ask(msg)
             if db["type"] in ("table", "text"):
@@ -518,6 +520,15 @@ def chat():
                 "source": "Live Web Search",
                 "links": web_links
             }), 200
+
+        # 5b. Last resort: the web had nothing either. The question may be about our own data in words the
+        # router did not recognise ("find total rows from ..."), so give the database a try before giving up.
+        if oracle_service.available and not db_tried and not force_web:
+            print(f"[INFO] Nothing found on the web; last try with the Oracle database: {msg}")
+            db = oracle_service.ask(msg)
+            if db["type"] in ("table", "text"):
+                body = db["message"] + (f"<br>{db['html']}" if db.get("html") else "")
+                return jsonify({"answer": body, "source": "Logistics Data", "links": []}), 200
 
         # 6. Final Fallback
         return jsonify({

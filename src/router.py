@@ -133,7 +133,7 @@ DB_STRONG = re.compile(
     re.IGNORECASE,
 )
 DB_WEAK = re.compile(
-    r"\b(revenue|weights?|packages?|pkgs?|customers?|clients?|parties|orders?|ordere?d|odered|shipped|shippers?|"
+    r"\b(revenue|weights?|packages?|pkgs?|rows?|records?|entries|customers?|clients?|parties|orders?|ordere?d|odered|shipped|shippers?|"
     r"senders?|branch(?:es)?|states?|cit(?:y|ies)|region|zone|division)\b",
     re.IGNORECASE,
 )
