@@ -133,12 +133,13 @@ DB_STRONG = re.compile(
     re.IGNORECASE,
 )
 DB_WEAK = re.compile(
-    r"\b(revenue|weights?|packages?|pkgs?|customers?|branch(?:es)?|states?|cit(?:y|ies)|region|zone|division)\b",
+    r"\b(revenue|weights?|packages?|pkgs?|customers?|clients?|parties|orders?|ordere?d|odered|shipped|shippers?|"
+    r"senders?|branch(?:es)?|states?|cit(?:y|ies)|region|zone|division)\b",
     re.IGNORECASE,
 )
 DB_AGG = re.compile(
     r"\b(how many|count|total|sum|average|avg|top|highest|lowest|maximum|minimum|number of|list|show|which|"
-    r"per|by|wise|each|compare|trend|monthly|yearly|month|year)\b",
+    r"who|most|least|best|biggest|largest|per|by|wise|each|compare|trend|monthly|yearly|month|year)\b",
     re.IGNORECASE,
 )
 # "how do I book a shipment", "booking process" are website questions, not data questions
