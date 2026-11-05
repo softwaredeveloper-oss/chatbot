@@ -15,6 +15,7 @@ from src.router import (
 )
 from src.tracking_service import TCITrackingService
 from src.board_service import is_board_query, board_answer
+from src import site_service
 
 from src.helper import is_url, extract_url, scrape_website
 from src.prompt import web_system_prompt
@@ -183,7 +184,9 @@ INTERNET_CUE = re.compile(r"\b(internet|online|google|web search|(from|on) the w
 
 def web_answer_for(msg: str):
     """Search the web for TCI Express info and answer from it. Returns (answer, links); ("", []) if nothing."""
-    web_results = web_search.search_tciexpress(msg, max_results=3)
+    # 1st choice: the official tciexpress.in page that answers it (exact, fast, no search credits).
+    # 2nd: the web search.
+    web_results = site_service.site_results(msg) or web_search.search_tciexpress(msg, max_results=3)
     if not web_results:
         return "", []
 
@@ -196,9 +199,11 @@ def web_answer_for(msg: str):
         """Join the sources, cutting each one and the whole text so the request stays under Groq's size limit."""
         parts = []
         for idx, item in enumerate(web_results, 1):
+            # official pages are short and exact: allow them more text than a search snippet
+            limit = per_source * 3 if item.get("official") else per_source
             parts.append(
                 f"SOURCE {idx}:\nTitle: {item.get('title', f'Web Source {idx}')}\n"
-                f"URL: {item.get('url', '')}\nContent: {(item.get('content') or '')[:per_source]}"
+                f"URL: {item.get('url', '')}\nContent: {(item.get('content') or '')[:limit]}"
             )
         return "\n\n".join(parts)[:total]
 
@@ -218,6 +223,8 @@ def web_answer_for(msg: str):
 
     if answer.startswith("I can only help with information about TCI Express"):
         web_links = []  # refusal: don't show unrelated links
+    elif is_people_query(msg):
+        web_links = web_links[:5]  # a people list can search many profiles: show only the top few sources
     return answer, web_links
 
 
@@ -360,7 +367,8 @@ def chat():
         # "mohit" / "all mohit in tci": list EVERY matching public LinkedIn profile (built from the profile
         # data itself, not summarised by the LLM, so nobody is dropped and nothing is invented)
         name_q = parse_name_query(msg)
-        if name_q:
+        # (not for questions an official page answers, e.g. "top management" or "contact": saves a search)
+        if name_q and not site_service.matches(msg):
             print(f"\n[INFO] >>> Name lookup (all matches): {name_q}")
             profiles = web_search.find_profiles_by_name(name_q)
             if profiles:

@@ -272,12 +272,31 @@ class WebSearchService:
                 search_depth="basic"
             ))
 
-            return [r for r in merged if is_about_tci(r)][:max_results]
+            # Other TCI Group companies (Freight, Supply Chain, ...) are not TCI Express: drop them
+            # unless the result also clearly names TCI Express / TCI XPS
+            def is_other_tci_group(r):
+                text = f"{r.get('title', '')} {r.get('content', '')}"
+                return bool(OTHER_TCI_PATTERN.search(text)) and not EXPRESS_PATTERN.search(text)
+
+            return [r for r in merged if is_about_tci(r) and not is_other_tci_group(r)][:max_results]
 
         # Default: only the last 12 months. Older data only if the user asks for it.
         # Contact / address pages (branches, helplines) carry no publish date, so don't date-filter them
         old_requested = wants_older_info(query) or bool(STATIC_INFO_PATTERN.search(query))
         time_range = None if old_requested else "year"
+
+        # Official website first: for ordinary questions search only tciexpress.in (exact, no third-party
+        # pages). News / financial / dated questions need outside publishers, so they skip this step.
+        # If the official site has nothing, fall through to the whole-web search below.
+        if not wants_older_info(query) and not NEWS_PATTERN.search(query):
+            official = self.search(
+                query=tci_query,
+                max_results=max_results,
+                search_depth="basic",
+                include_domains=["tciexpress.in"],
+            )
+            if official:
+                return official[:max_results]
 
         # Fetch extra results, then keep only the ones actually about TCI Express
         results = self.search(
